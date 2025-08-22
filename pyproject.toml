@@ -1,0 +1,14 @@
+[project]
+name = "smart-home-bot"
+version = "0.1.0"
+description = "Add your description here"
+readme = "README.md"
+requires-python = ">=3.13"
+dependencies = [
+    "asgi-correlation-id>=4.3.4",
+    "fastapi[standard]>=0.116.1",
+    "line-bot-sdk>=3.18.1",
+    "pydantic-settings>=2.10.1",
+    "structlog>=25.4.0",
+    "temporalio>=1.16.0",
+]
