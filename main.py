@@ -1,23 +1,26 @@
 import time
+import socket
 import logging
 import asyncio
 import uvicorn
 import structlog
 from typing import Annotated
+from datetime import timedelta
 from contextlib import asynccontextmanager
 from asgi_correlation_id.context import correlation_id
 from asgi_correlation_id import CorrelationIdMiddleware
 from uvicorn.protocols.utils import get_path_with_query_string
 from fastapi import FastAPI, Header, Request, Response, HTTPException, status
 from temporalio.client import Client as TemporalClient
+from temporalio.common import WorkflowIDReusePolicy
 from temporalio.worker import Worker as TemporalWorker
+from temporalio.contrib.openai_agents import OpenAIAgentsPlugin, ModelActivityParameters
 
 from linebot.v3.messaging import (
     AsyncApiClient,
     AsyncMessagingApi,
     Configuration,
 )
-
 from linebot.v3.webhook import WebhookParser
 from linebot.v3.exceptions import (
     InvalidSignatureError
@@ -27,29 +30,59 @@ from linebot.v3.webhooks import (
     TextMessageContent
 )
 
+from paho.mqtt import enums as mqtt_enums
+from paho.mqtt import client as mqtt
+
 from config import config, logger
 from workflow import HandleTextMessageWorkflow, HandleTextMessageWorkflowParams
-from activity import ReplyActivity
+from activity import ReplyActivity, HomeAssistantActivity
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    client = await TemporalClient.connect(config.temporal_address, namespace=config.temporal_namespace)
+    client = await TemporalClient.connect(config.temporal_address, namespace=config.temporal_namespace, plugins=[
+        OpenAIAgentsPlugin(
+            model_params=ModelActivityParameters(
+                start_to_close_timeout=timedelta(seconds=30)
+            )
+        ),
+    ])
     app.state.temporal_client = client
-    logger.debug("Connected to Temporal server.", extra={
-                 "address": config.temporal_address, "namespace": config.temporal_namespace})
+    logger.info("Connected to Temporal server.", extra={
+        "address": config.temporal_address, "namespace": config.temporal_namespace})
 
-    line_bot_api = AsyncMessagingApi(AsyncApiClient(Configuration(
+    line_messaging_api = AsyncMessagingApi(AsyncApiClient(Configuration(
         access_token=config.line_channel_access_token)))
 
-    reply_activity = ReplyActivity(line_bot_api)
+    mqtt_client = mqtt.Client(client_id=socket.gethostname(),
+                              protocol=mqtt_enums.MQTTProtocolVersion.MQTTv5,
+                              callback_api_version=mqtt_enums.CallbackAPIVersion.VERSION2)
+    mqtt_client.username_pw_set(config.mqtt_user, config.mqtt_password)
+
+    def mqtt_on_connect(_, userdata, flags, rc, properties):
+        if rc != 0:
+            raise ConnectionError(
+                f"Failed to connect to MQTT Broker, return code {rc}")
+        logger.info("Connected to MQTT Broker!", extra={
+            "userdata": userdata,
+            "flags": flags,
+            "properties": properties
+        })
+    mqtt_client.on_connect = mqtt_on_connect
+    mqtt_client.connect(config.mqtt_broker, config.mqtt_port)
+    mqtt_client.loop_start()
+
+    reply_activity = ReplyActivity(line_messaging_api)
+    home_assistant_activity = HomeAssistantActivity(mqtt_client)
 
     worker = TemporalWorker(
         client,
         task_queue=config.temporal_task_queue,
         workflows=[HandleTextMessageWorkflow],
-        activities=[reply_activity.reply_quick_reply,
-                    reply_activity.reply_audio],
+        activities=[reply_activity.reply_text,
+                    reply_activity.reply_quick_reply,
+                    reply_activity.reply_audio,
+                    home_assistant_activity.remote_control_air_conditioner],
     )
 
     task = asyncio.create_task(worker.run())
@@ -65,8 +98,11 @@ async def lifespan(app: FastAPI):
         await worker.shutdown()
         logger.info(
             "Application shutdown: Temporal worker shutdown gracefully.")
-        await line_bot_api.api_client.close()
-        config.logger.debug("Application shutdown: LINE API Client closed.")
+        mqtt_client.loop_stop()
+        mqtt_client.disconnect()
+        logger.info("Application shutdown: MQTT client disconnected.")
+        await line_messaging_api.api_client.close()
+        logger.debug("Application shutdown: LINE API Client closed.")
 
 app = FastAPI(lifespan=lifespan, docs_url=None,
               redoc_url=None, openapi_url=None)
@@ -166,6 +202,7 @@ async def handle_callback(request: Request, x_line_signature: Annotated[str, Hea
             ),
             id=event.webhook_event_id,
             task_queue=config.temporal_task_queue,
+            id_reuse_policy=WorkflowIDReusePolicy.TERMINATE_IF_RUNNING,
         )
         logger.info("Started workflow for handling text message.", extra={
                     "task_queue": config.temporal_task_queue, "workflow_id": handle.id})

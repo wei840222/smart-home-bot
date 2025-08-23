@@ -1,5 +1,7 @@
+import json
 from typing import List
-from dataclasses import dataclass
+from pydantic import Field
+from pydantic.dataclasses import dataclass
 from temporalio import activity
 
 from linebot.v3.messaging import (
@@ -12,12 +14,20 @@ from linebot.v3.messaging import (
     AudioMessage,
 )
 
+from paho.mqtt import client as mqtt_client
+
 from config import logger
 
 
 @dataclass
 class ReplyTokenParams:
     reply_token: str
+
+
+@dataclass
+class ReplyTextActivityParams(ReplyTokenParams):
+    quote_token: str
+    message: str
 
 
 @dataclass
@@ -34,26 +44,41 @@ class ReplyAudioActivityParams(ReplyTokenParams):
 
 
 class ReplyActivity:
-    def __init__(self, async_messaging_api: AsyncMessagingApi):
-        self.line_bot_api = async_messaging_api
+    def __init__(self, line_messaging_api: AsyncMessagingApi):
+        self.line_messaging_api = line_messaging_api
+
+    @activity.defn(name="ReplyTextActivity")
+    async def reply_text(self, input: ReplyTextActivityParams) -> dict:
+        response = await self.line_messaging_api.reply_message(
+            ReplyMessageRequest(
+                reply_token=input.reply_token,
+                messages=[TextMessage(
+                    quote_token=input.quote_token,
+                    text=input.message,
+                )]
+            )
+        )
+        logger.info("Reply text message sent successfully.",
+                    extra={"response": response})
+        return response.to_dict()
 
     @activity.defn(name="ReplyQuickReplyActivity")
     async def reply_quick_reply(self, input: ReplyQuickReplyActivityParams) -> dict:
-        response = await self.line_bot_api.reply_message(
+        response = await self.line_messaging_api.reply_message(
             ReplyMessageRequest(
-                reply_token=input.reply_token,  # type: ignore
+                reply_token=input.reply_token,
                 messages=[TextMessage(
-                    quote_token=input.quote_token,  # type: ignore
+                    quote_token=input.quote_token,
                     text=input.message,
-                    quick_reply=QuickReply(  # type: ignore
+                    quick_reply=QuickReply(
                         items=[
                             QuickReplyItem(
                                 action=MessageAction(
                                     label=text, text=text)
-                            ) for text in input.quick_messages  # type: ignore
+                            ) for text in input.quick_messages
                         ]
                     )
-                )]  # type: ignore
+                )]
             )
         )
         logger.info("Reply audio message sent successfully.",
@@ -62,13 +87,40 @@ class ReplyActivity:
 
     @activity.defn(name="ReplyAudioActivity")
     async def reply_audio(self, input: ReplyAudioActivityParams) -> dict:
-        response = await self.line_bot_api.reply_message(
+        response = await self.line_messaging_api.reply_message(
             ReplyMessageRequest(
-                reply_token=input.reply_token,  # type: ignore
+                reply_token=input.reply_token,
                 messages=[AudioMessage(
-                    original_content_url=input.content_url, duration=input.duration)]  # type: ignore
+                    original_content_url=input.content_url, duration=input.duration)]
             )
         )
         logger.info("Reply audio message sent successfully.",
                     extra={"response": response})
         return response.to_dict()
+
+
+@dataclass
+class RemoteControlAirConditionerActivityParams:
+    power_on: bool = Field(
+        default=True, description="Power on or off the air conditioner.")
+    temperature: int = Field(default=25, ge=16, le=32,
+                             description="Set temperature. In Celsius.")
+
+
+class HomeAssistantActivity:
+    def __init__(self, mqtt_client: mqtt_client.Client):
+        self.mqtt_client = mqtt_client
+
+    @activity.defn(name="RemoteControlAirConditionerActivity")
+    async def remote_control_air_conditioner(self, input: RemoteControlAirConditionerActivityParams) -> dict:
+        """
+        Remote control the air conditioner.
+        Args:
+            input (RemoteControlAirConditionerActivityParams): The parameters for controlling the air conditioner.
+        """
+        response = self.mqtt_client.publish(topic="tasmota/cmnd/IRHVAC",
+                                            payload=json.dumps({"Vendor": "HITACHI_AC344", "Model": -1, "Command": "Control", "Mode": "Cool", "Power": "On" if input.power_on else "Off", "Celsius": "On", "Temp": input.temperature, "FanSpeed": "Auto", "SwingV": "Auto", "SwingH": "Auto"}))
+        return {
+            "status": "success",
+            "response": str(response)
+        }

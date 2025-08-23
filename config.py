@@ -1,3 +1,4 @@
+import os
 import sys
 import logging
 import structlog
@@ -132,7 +133,7 @@ class LoggerMixin:
 
             sys.excepthook = handle_exception
 
-        return self._logger  # type: ignore
+        return self._logger
 
 
 class Config(BaseSettings, LoggerMixin):
@@ -148,6 +149,11 @@ class Config(BaseSettings, LoggerMixin):
     line_channel_access_token: str = Field(
         description="The access token for the LINE  channel.")
 
+    openai_api_key: str = Field(description="The API key for OpenAI.")
+    openai_model: str = Field(
+        default="gpt-5-mini",
+        description="The OpenAI model to use for the assistant.")
+
     temporal_address: str = Field(
         default="localhost:7233",
         description="The address of the Temporal frontend server.")
@@ -160,6 +166,23 @@ class Config(BaseSettings, LoggerMixin):
         default="BOT_FARM:SMART_HOME_BOT",
         description="The task queue for the Temporal worker.")
 
+    mqtt_broker: str = Field(
+        default="localhost",
+        description="The MQTT broker address.")
 
-config = Config()  # type: ignore
+    mqtt_port: int = Field(
+        default=1883,
+        description="The MQTT broker port.")
+
+    mqtt_user: str = Field(
+        default="smart-home-bot",
+        description="The username for the MQTT connection.")
+
+    mqtt_password: str = Field(
+        default="",
+        description="The password for the MQTT connection.")
+
+
+config = Config()
 logger = config.logger
+os.environ["OPENAI_API_KEY"] = config.openai_api_key
