@@ -1,6 +1,4 @@
 import time
-import socket
-import logging
 import asyncio
 import uvicorn
 import structlog
@@ -30,53 +28,42 @@ from linebot.v3.webhooks import (
     TextMessageContent
 )
 
-from paho.mqtt import enums as mqtt_enums
-from paho.mqtt import client as mqtt
+import aiomqtt
 
-from config import config, logger
+from config import config
 from workflow import HandleTextMessageWorkflow, HandleTextMessageWorkflowParams
 from activity import ReplyActivity, HomeAssistantActivity
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    client = await TemporalClient.connect(config.temporal_address, namespace=config.temporal_namespace, plugins=[
+    logger = config.getLogger("fastapi.lifespan")
+    temporal_client = await TemporalClient.connect(config.temporal_address, namespace=config.temporal_namespace, plugins=[
         OpenAIAgentsPlugin(
             model_params=ModelActivityParameters(
                 start_to_close_timeout=timedelta(seconds=30)
             )
         ),
     ])
-    app.state.temporal_client = client
+    app.state.temporal_client = temporal_client
     logger.info("Connected to Temporal server.", extra={
         "address": config.temporal_address, "namespace": config.temporal_namespace})
 
-    line_messaging_api = AsyncMessagingApi(AsyncApiClient(Configuration(
-        access_token=config.line_channel_access_token)))
-
-    mqtt_client = mqtt.Client(client_id=socket.gethostname(),
-                              protocol=mqtt_enums.MQTTProtocolVersion.MQTTv5,
-                              callback_api_version=mqtt_enums.CallbackAPIVersion.VERSION2)
-    mqtt_client.username_pw_set(config.mqtt_user, config.mqtt_password)
-
-    def mqtt_on_connect(_, userdata, flags, rc, properties):
-        if rc != 0:
-            raise ConnectionError(
-                f"Failed to connect to MQTT Broker, return code {rc}")
-        logger.info("Connected to MQTT Broker!", extra={
-            "userdata": userdata,
-            "flags": flags,
-            "properties": properties
-        })
-    mqtt_client.on_connect = mqtt_on_connect
-    mqtt_client.connect(config.mqtt_broker, config.mqtt_port)
-    mqtt_client.loop_start()
-
-    reply_activity = ReplyActivity(line_messaging_api)
+    mqtt_logger = config.getLogger("aiomqtt")
+    mqtt_client = aiomqtt.Client(hostname=config.mqtt_broker, port=config.mqtt_port, username=config.mqtt_user,
+                                 password=config.mqtt_password, identifier=config.hostname, protocol=aiomqtt.ProtocolVersion.V5, logger=mqtt_logger)
+    mqtt_client = await mqtt_client.__aenter__()
+    mqtt_logger.info("Connected to MQTT broker.", extra={
+        "broker": config.mqtt_broker, "port": config.mqtt_port, "username": config.mqtt_user, "client_id": config.hostname})
+    app.state.mqtt_client = mqtt_client
     home_assistant_activity = HomeAssistantActivity(mqtt_client)
 
+    line_messaging_api = AsyncMessagingApi(AsyncApiClient(
+        Configuration(access_token=config.line_channel_access_token)))
+    reply_activity = ReplyActivity(line_messaging_api)
+
     worker = TemporalWorker(
-        client,
+        temporal_client,
         task_queue=config.temporal_task_queue,
         workflows=[HandleTextMessageWorkflow],
         activities=[reply_activity.reply_text,
@@ -98,16 +85,14 @@ async def lifespan(app: FastAPI):
         await worker.shutdown()
         logger.info(
             "Application shutdown: Temporal worker shutdown gracefully.")
-        mqtt_client.loop_stop()
-        mqtt_client.disconnect()
+        await mqtt_client.__aexit__(None, None, None)
         logger.info("Application shutdown: MQTT client disconnected.")
         await line_messaging_api.api_client.close()
         logger.debug("Application shutdown: LINE API Client closed.")
 
+
 app = FastAPI(lifespan=lifespan, docs_url=None,
               redoc_url=None, openapi_url=None)
-
-access_logger = logging.getLogger("fastapi.access")
 
 
 @app.middleware("http")
@@ -125,7 +110,7 @@ async def logging_middleware(request: Request, call_next) -> Response:
         response = await call_next(request)
     except Exception:
         # TODO: Validate that we don't swallow exceptions (unit test?)
-        logging.getLogger("fastapi.error").exception("Uncaught exception")
+        config.getLogger("fastapi.error").exception("Uncaught exception")
         raise
     finally:
         process_time = time.perf_counter_ns() - start_time
@@ -149,10 +134,11 @@ async def logging_middleware(request: Request, call_next) -> Response:
             "duration": process_time,
         }
 
+        access_logger = config.getLogger("fastapi.access")
         match status_code:
-            case code if 400 <= code < 500:
+            case code if status.HTTP_400_BAD_REQUEST <= code < status.HTTP_500_INTERNAL_SERVER_ERROR:
                 access_logger.warning(message, extra=extra)
-            case code if code >= 500:
+            case code if code >= status.HTTP_500_INTERNAL_SERVER_ERROR:
                 access_logger.error(message, extra=extra)
             case _:
                 access_logger.info(message, extra=extra)
@@ -173,8 +159,10 @@ def health():
     return "OK"
 
 
-@app.post("/callback", status_code=status.HTTP_202_ACCEPTED)
+@app.post("/callback/line", status_code=status.HTTP_202_ACCEPTED)
 async def handle_callback(request: Request, x_line_signature: Annotated[str, Header()]):
+    logger = config.getLogger("handler.callback.line")
+
     body = await request.body()
 
     try:

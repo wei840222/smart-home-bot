@@ -14,9 +14,10 @@ from linebot.v3.messaging import (
     AudioMessage,
 )
 
-from paho.mqtt import client as mqtt_client
+import aiomqtt
 
-from config import logger
+from config import config
+logger = config.getLogger("temporal.activity")
 
 
 @dataclass
@@ -108,7 +109,7 @@ class RemoteControlAirConditionerActivityParams:
 
 
 class HomeAssistantActivity:
-    def __init__(self, mqtt_client: mqtt_client.Client):
+    def __init__(self, mqtt_client: aiomqtt.Client):
         self.mqtt_client = mqtt_client
 
     @activity.defn(name="RemoteControlAirConditionerActivity")
@@ -118,9 +119,23 @@ class HomeAssistantActivity:
         Args:
             input (RemoteControlAirConditionerActivityParams): The parameters for controlling the air conditioner.
         """
-        response = self.mqtt_client.publish(topic="tasmota/cmnd/IRHVAC",
-                                            payload=json.dumps({"Vendor": "HITACHI_AC344", "Model": -1, "Command": "Control", "Mode": "Cool", "Power": "On" if input.power_on else "Off", "Celsius": "On", "Temp": input.temperature, "FanSpeed": "Auto", "SwingV": "Auto", "SwingH": "Auto"}))
+
+        payload = self._generate_mqtt_payload(
+            input.power_on, input.temperature)
+
+        await self.mqtt_client.publish(topic="tasmota/cmnd/IRHVAC", payload=json.dumps(payload), qos=2)
+        return payload
+
+    def _generate_mqtt_payload(self, power_on: bool, temperature: int) -> dict:
         return {
-            "status": "success",
-            "response": str(response)
+            "Vendor": "HITACHI_AC344",
+            "Model": -1,
+            "Command": "Control",
+            "Mode": "Cool",
+            "Power": "On" if power_on else "Off",
+            "Celsius": "On",
+            "Temp": temperature,
+            "FanSpeed": "Auto",
+            "SwingV": "Auto",
+            "SwingH": "Auto",
         }

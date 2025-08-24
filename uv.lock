@@ -54,6 +54,18 @@ wheels = [
 ]
 
 [[package]]
+name = "aiomqtt"
+version = "2.4.0"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "paho-mqtt" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/45/9a/863bc34c64bc4acb9720a9950bfc77d6f324640cdf1f420bb5d9ee624975/aiomqtt-2.4.0.tar.gz", hash = "sha256:ab0f18fc5b7ffaa57451c407417d674db837b00a9c7d953cccd02be64f046c17", size = 82718, upload-time = "2025-05-03T20:21:27.748Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/98/0c/2720665998d97d3a9521c03b138a22247e035ba54c4738e934da33c68699/aiomqtt-2.4.0-py3-none-any.whl", hash = "sha256:721296e2b79df5f6c7c4dfc91700ae0166953a4127735c92637859619dbd84e4", size = 15908, upload-time = "2025-05-03T20:21:26.337Z" },
+]
+
+[[package]]
 name = "aiosignal"
 version = "1.4.0"
 source = { registry = "https://pypi.org/simple" }
@@ -1061,11 +1073,11 @@ name = "smart-home-bot"
 version = "0.1.0"
 source = { virtual = "." }
 dependencies = [
+    { name = "aiomqtt" },
     { name = "asgi-correlation-id" },
     { name = "fastapi", extra = ["standard"] },
     { name = "line-bot-sdk" },
     { name = "openai-agents" },
-    { name = "paho-mqtt" },
     { name = "pydantic-settings" },
     { name = "structlog" },
     { name = "temporalio" },
@@ -1073,11 +1085,11 @@ dependencies = [
 
 [package.metadata]
 requires-dist = [
+    { name = "aiomqtt", specifier = ">=2.4.0" },
     { name = "asgi-correlation-id", specifier = ">=4.3.4" },
     { name = "fastapi", extras = ["standard"], specifier = ">=0.116.1" },
     { name = "line-bot-sdk", specifier = ">=3.18.1" },
     { name = "openai-agents", specifier = ">=0.2.9" },
-    { name = "paho-mqtt", specifier = ">=2.1.0" },
     { name = "pydantic-settings", specifier = ">=2.10.1" },
     { name = "structlog", specifier = ">=25.4.0" },
     { name = "temporalio", specifier = ">=1.16.0" },

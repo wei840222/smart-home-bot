@@ -1,5 +1,6 @@
 import os
 import sys
+import socket
 import logging
 import structlog
 from pydantic import Field
@@ -22,6 +23,7 @@ class LoggerConfig(BaseSettings):
 
 class LoggerMixin:
     _logger: Optional[logging.Logger] = None
+    _logger_config: Optional[LoggerConfig] = None
 
     # https://github.com/hynek/structlog/issues/35#issuecomment-591321744
     def _rename_event_key(self, __, event_dict: EventDict) -> EventDict:
@@ -45,7 +47,7 @@ class LoggerMixin:
     @property
     def logger(self) -> logging.Logger:
         if self._logger is None:
-            config = LoggerConfig()
+            self._logger_config = LoggerConfig()
 
             timestamper = structlog.processors.TimeStamper(fmt="iso")
 
@@ -60,7 +62,7 @@ class LoggerMixin:
                 structlog.processors.StackInfoRenderer(),
             ]
 
-            if config.format == "json":
+            if self._logger_config.format == "json":
                 # We rename the `event` key to `message` only in JSON logs, as Datadog looks for the
                 # `message` key but the pretty ConsoleRenderer looks for `event`
                 shared_processors.append(LoggerMixin._rename_event_key)
@@ -79,7 +81,7 @@ class LoggerMixin:
             )
 
             log_renderer: structlog.types.Processor
-            if config.format == "json":
+            if self._logger_config.format == "json":
                 log_renderer = structlog.processors.JSONRenderer()
             else:
                 log_renderer = structlog.dev.ConsoleRenderer()
@@ -102,7 +104,7 @@ class LoggerMixin:
 
             self._logger = logging.getLogger()
             self._logger.addHandler(handler)
-            self._logger.setLevel(config.level.upper())
+            self._logger.setLevel(self._logger_config.level.upper())
 
             for _log in ["uvicorn", "uvicorn.error"]:
                 # Clear the log handlers for uvicorn loggers, and enable propagation
@@ -135,12 +137,28 @@ class LoggerMixin:
 
         return self._logger
 
+    def getLogger(self, name: Optional[str] = None) -> logging.Logger:
+        """
+        Get a logger with the specified name, configured with the settings from this config.
+        """
+        if name is None:
+            return self.logger
+
+        logger = logging.getLogger(name)
+        logger.setLevel(self._logger_config.level.upper())  # type: ignore
+        return logger
+
 
 class Config(BaseSettings, LoggerMixin):
     model_config = SettingsConfigDict(
         env_file=".env",
         env_file_encoding="utf-8",
         extra="ignore",
+    )
+
+    hostname: str = Field(
+        default=socket.gethostname(),
+        description="The hostname of the machine."
     )
 
     line_channel_secret: str = Field(
@@ -184,5 +202,5 @@ class Config(BaseSettings, LoggerMixin):
 
 
 config = Config()
-logger = config.logger
 os.environ["OPENAI_API_KEY"] = config.openai_api_key
+logger = config.getLogger()
