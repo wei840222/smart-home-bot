@@ -104,6 +104,11 @@ class LoggerMixin:
             self._logger.addHandler(handler)
             self._logger.setLevel(self._logger_config.level.upper())
 
+            httpx_logger = logging.getLogger("httpx")
+            httpx_logger.setLevel(self._logger_config.level.upper())
+            httpx_logger.handlers.clear()
+            httpx_logger.propagate = True
+
             for _log in ["uvicorn", "uvicorn.error"]:
                 # Clear the log handlers for uvicorn loggers, and enable propagation
                 # so the messages are caught by our root logger and formatted correctly
