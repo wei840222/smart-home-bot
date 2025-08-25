@@ -25,6 +25,8 @@ ARG user=fastapi
 ARG group=fastapi
 ARG uid=10000
 ARG gid=10001
+ARG RELEASE
+ARG VERSION
 
 RUN groupadd -g ${gid} ${group} \
     && useradd -l -u ${uid} -g ${gid} -m -s /bin/bash ${user}
@@ -34,6 +36,8 @@ USER ${user}
 ENV PATH="/src/.venv/bin:$PATH"
 ENV LOG_LEVEL="info"
 ENV LOG_FORMAT="json"
+ENV LANGSMITH_RELEASE=${RELEASE:-nightly}
+ENV LANGSMITH_VERSION=${VERSION:-0.0.0}
 
 ENTRYPOINT ["python"]
 CMD ["main.py"]
