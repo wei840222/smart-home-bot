@@ -1,9 +1,9 @@
 import json
 from typing import List
+
 from pydantic import Field
 from pydantic.dataclasses import dataclass
 from temporalio import activity
-
 from linebot.v3.messaging import (
     AsyncMessagingApi,
     ReplyMessageRequest,
@@ -13,11 +13,11 @@ from linebot.v3.messaging import (
     MessageAction,
     AudioMessage,
 )
-
 import aiomqtt
 
 from config import config
-logger = config.getLogger("temporal.activity")
+
+logger = config.get_logger("temporal.activity")
 
 
 @dataclass

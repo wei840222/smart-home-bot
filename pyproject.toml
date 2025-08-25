@@ -8,9 +8,13 @@ dependencies = [
     "aiomqtt>=2.4.0",
     "asgi-correlation-id>=4.3.4",
     "fastapi[standard]>=0.116.1",
+    "langchain-core>=0.3.74",
+    "langfuse>=3.3.0",
     "line-bot-sdk>=3.18.1",
+    "nest-asyncio>=1.6.0",
     "openai-agents>=0.2.9",
     "pydantic-settings>=2.10.1",
+    "pydantic-settings-yaml>=0.2.0",
     "structlog>=25.4.0",
     "temporalio>=1.16.0",
 ]

@@ -1,10 +1,11 @@
 import time
 import asyncio
-import uvicorn
-import structlog
 from typing import Annotated
 from datetime import timedelta
 from contextlib import asynccontextmanager
+
+import uvicorn
+import structlog
 from asgi_correlation_id.context import correlation_id
 from asgi_correlation_id import CorrelationIdMiddleware
 from uvicorn.protocols.utils import get_path_with_query_string
@@ -13,21 +14,10 @@ from temporalio.client import Client as TemporalClient
 from temporalio.common import WorkflowIDReusePolicy
 from temporalio.worker import Worker as TemporalWorker
 from temporalio.contrib.openai_agents import OpenAIAgentsPlugin, ModelActivityParameters
-
-from linebot.v3.messaging import (
-    AsyncApiClient,
-    AsyncMessagingApi,
-    Configuration,
-)
+from linebot.v3.messaging import AsyncApiClient, AsyncMessagingApi, Configuration
 from linebot.v3.webhook import WebhookParser
-from linebot.v3.exceptions import (
-    InvalidSignatureError
-)
-from linebot.v3.webhooks import (
-    MessageEvent,
-    TextMessageContent
-)
-
+from linebot.v3.exceptions import InvalidSignatureError
+from linebot.v3.webhooks import MessageEvent,  TextMessageContent
 import aiomqtt
 
 from config import config
@@ -37,7 +27,7 @@ from activity import ReplyActivity, HomeAssistantActivity
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    logger = config.getLogger("fastapi.lifespan")
+    logger = config.get_logger("fastapi.lifespan")
     temporal_client = await TemporalClient.connect(config.temporal_address, namespace=config.temporal_namespace, plugins=[
         OpenAIAgentsPlugin(
             model_params=ModelActivityParameters(
@@ -49,7 +39,7 @@ async def lifespan(app: FastAPI):
     logger.info("Connected to Temporal server.", extra={
         "address": config.temporal_address, "namespace": config.temporal_namespace})
 
-    mqtt_logger = config.getLogger("aiomqtt")
+    mqtt_logger = config.get_logger("aiomqtt")
     mqtt_client = aiomqtt.Client(hostname=config.mqtt_broker, port=config.mqtt_port, username=config.mqtt_user,
                                  password=config.mqtt_password, identifier=config.hostname, protocol=aiomqtt.ProtocolVersion.V5, logger=mqtt_logger)
     mqtt_client = await mqtt_client.__aenter__()
@@ -110,7 +100,7 @@ async def logging_middleware(request: Request, call_next) -> Response:
         response = await call_next(request)
     except Exception:
         # TODO: Validate that we don't swallow exceptions (unit test?)
-        config.getLogger("fastapi.error").exception("Uncaught exception")
+        config.get_logger("fastapi.error").exception("Uncaught exception")
         raise
     finally:
         process_time = time.perf_counter_ns() - start_time
@@ -134,7 +124,7 @@ async def logging_middleware(request: Request, call_next) -> Response:
             "duration": process_time,
         }
 
-        access_logger = config.getLogger("fastapi.access")
+        access_logger = config.get_logger("fastapi.access")
         match status_code:
             case code if status.HTTP_400_BAD_REQUEST <= code < status.HTTP_500_INTERNAL_SERVER_ERROR:
                 access_logger.warning(message, extra=extra)
@@ -161,7 +151,7 @@ def health():
 
 @app.post("/callback/line", status_code=status.HTTP_202_ACCEPTED)
 async def handle_callback(request: Request, x_line_signature: Annotated[str, Header()]):
-    logger = config.getLogger("handler.callback.line")
+    logger = config.get_logger("handler.callback.line")
 
     body = await request.body()
 
