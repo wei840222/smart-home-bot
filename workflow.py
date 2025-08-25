@@ -9,9 +9,12 @@ with workflow.unsafe.imports_passed_through():
     from activity import ReplyActivity, ReplyTextActivityParams, HomeAssistantActivity
     from linebot.v3.messaging.exceptions import ApiException
     from langchain_core.prompts import PromptTemplate
-    from agents import Agent, Runner
+    from agents import Agent, Runner, set_trace_processors
+    from langsmith.wrappers import OpenAIAgentsTracingProcessor
 
-    from config import config, logger
+    from config import config
+    set_trace_processors([OpenAIAgentsTracingProcessor(
+        client=config._get_langsmith_config().get_langsmith_client())])
 
 
 @dataclass
@@ -21,7 +24,7 @@ class HandleTextMessageWorkflowParams:
     message: str
 
 
-@workflow.defn(name="HandleTextMessage")
+@workflow.defn(name="HandleTextMessage", sandboxed=False)
 class HandleTextMessageWorkflow:
     @workflow.run
     async def run(self, input: HandleTextMessageWorkflowParams) -> bool:
@@ -32,8 +35,8 @@ class HandleTextMessageWorkflow:
         )
 
         prompt_template = PromptTemplate.from_template("\n\n".join([
-            config.get_prompt("system_prompt").text,
-            config.get_prompt("language_prompt").text,
+            config.get_prompt("system-prompt").text,
+            config.get_prompt("language-prompt").text,
         ]))
 
         agent = Agent(

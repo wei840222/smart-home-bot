@@ -7,13 +7,12 @@ from pydantic_settings import SettingsConfigDict
 from pydantic_settings_yaml import YamlBaseSettings
 from langchain_core.prompts import PromptTemplate
 
-from .client import LangSmithConfig, LangfuseConfig
+from .langsmith import LangSmithConfig
 
 
 class PromptProvider(Enum):
     YAML = "yaml"
     LANGSMITH = "langsmith"
-    LANGFUSE = "langfuse"
 
 
 class Prompt(BaseModel):
@@ -45,18 +44,12 @@ class PromptMixin:
     )
 
     _prompt_config: Optional[PromptConfig] = None
-    _langfuse_config: Optional[LangfuseConfig] = None
     _langsmith_config: Optional[LangSmithConfig] = None
 
     def _get_langsmith_config(self) -> LangSmithConfig:
         if self._langsmith_config is None:
             self._langsmith_config = LangSmithConfig()
         return self._langsmith_config
-
-    def _get_langfuse_config(self) -> LangfuseConfig:
-        if self._langfuse_config is None:
-            self._langfuse_config = LangfuseConfig()
-        return self._langfuse_config
 
     def _transform_prompt(self, prompt: str) -> str:
         return re.sub(r"{{\s*(\w+)\s*}}", r"{\g<1>}", prompt)
@@ -75,20 +68,11 @@ class PromptMixin:
             case PromptProvider.LANGSMITH:
                 client = self._get_langsmith_config().get_langsmith_client()
                 langsmith_prompt: PromptTemplate = client.pull_prompt(
-                    f"{name}:{self._get_langsmith_config().environment}")
+                    f"{self._get_langsmith_config().project}-{name}:{self._get_langsmith_config().environment}")
                 return Prompt(
                     name=name,
                     text=self._transform_prompt(langsmith_prompt.template),
                     metadata=langsmith_prompt.metadata
-                )
-            case PromptProvider.LANGFUSE:
-                client = self._get_langfuse_config().get_langfuse_client()
-                langfuse_prompt = client.get_prompt(
-                    name, label=client.environment)  # type: ignore
-                return Prompt(
-                    name=langfuse_prompt.name,
-                    text=langfuse_prompt.get_langchain_prompt(),
-                    metadata=langfuse_prompt.config
                 )
             case _:
                 raise ValueError(

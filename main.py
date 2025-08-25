@@ -1,8 +1,8 @@
 import time
+import signal
 import asyncio
 from typing import Annotated
 from datetime import timedelta
-from contextlib import asynccontextmanager
 
 import uvicorn
 import structlog
@@ -20,69 +20,11 @@ from linebot.v3.exceptions import InvalidSignatureError
 from linebot.v3.webhooks import MessageEvent,  TextMessageContent
 import aiomqtt
 
-from config import config
+from config import config, logger
 from workflow import HandleTextMessageWorkflow, HandleTextMessageWorkflowParams
 from activity import ReplyActivity, HomeAssistantActivity
 
-
-@asynccontextmanager
-async def lifespan(app: FastAPI):
-    logger = config.get_logger("fastapi.lifespan")
-    temporal_client = await TemporalClient.connect(config.temporal_address, namespace=config.temporal_namespace, plugins=[
-        OpenAIAgentsPlugin(
-            model_params=ModelActivityParameters(
-                start_to_close_timeout=timedelta(seconds=30)
-            )
-        ),
-    ])
-    app.state.temporal_client = temporal_client
-    logger.info("Connected to Temporal server.", extra={
-        "address": config.temporal_address, "namespace": config.temporal_namespace})
-
-    mqtt_logger = config.get_logger("aiomqtt")
-    mqtt_client = aiomqtt.Client(hostname=config.mqtt_broker, port=config.mqtt_port, username=config.mqtt_user,
-                                 password=config.mqtt_password, identifier=config.hostname, protocol=aiomqtt.ProtocolVersion.V5, logger=mqtt_logger)
-    mqtt_client = await mqtt_client.__aenter__()
-    mqtt_logger.info("Connected to MQTT broker.", extra={
-        "broker": config.mqtt_broker, "port": config.mqtt_port, "username": config.mqtt_user, "client_id": config.hostname})
-    app.state.mqtt_client = mqtt_client
-    home_assistant_activity = HomeAssistantActivity(mqtt_client)
-
-    line_messaging_api = AsyncMessagingApi(AsyncApiClient(
-        Configuration(access_token=config.line_channel_access_token)))
-    reply_activity = ReplyActivity(line_messaging_api)
-
-    worker = TemporalWorker(
-        temporal_client,
-        task_queue=config.temporal_task_queue,
-        workflows=[HandleTextMessageWorkflow],
-        activities=[reply_activity.reply_text,
-                    reply_activity.reply_quick_reply,
-                    reply_activity.reply_audio,
-                    home_assistant_activity.remote_control_air_conditioner],
-    )
-
-    task = asyncio.create_task(worker.run())
-    logger.info("Temporal worker started.", extra={
-                "task_queue": config.temporal_task_queue})
-
-    yield
-
-    task.cancel()
-    try:
-        await task
-    except asyncio.CancelledError:
-        await worker.shutdown()
-        logger.info(
-            "Application shutdown: Temporal worker shutdown gracefully.")
-        await mqtt_client.__aexit__(None, None, None)
-        logger.info("Application shutdown: MQTT client disconnected.")
-        await line_messaging_api.api_client.close()
-        logger.debug("Application shutdown: LINE API Client closed.")
-
-
-app = FastAPI(lifespan=lifespan, docs_url=None,
-              redoc_url=None, openapi_url=None)
+app = FastAPI(docs_url=None, redoc_url=None, openapi_url=None)
 
 
 @app.middleware("http")
@@ -187,5 +129,70 @@ async def handle_callback(request: Request, x_line_signature: Annotated[str, Hea
 
     return "ACCEPTED"
 
+
+def graceful_shutdown(sig: signal.Signals, task_to_cancel: set[asyncio.Task]) -> None:
+    logger.info("received exit signal", extra={"signal": sig.name})
+    for task in task_to_cancel:
+        logger.info("cancelling task", extra={"task": task})
+        task.cancel()
+
+
+async def main() -> None:
+    loop = asyncio.get_running_loop()
+    task_to_cancel = set()
+    for sig in (signal.SIGHUP, signal.SIGTERM, signal.SIGINT):
+        loop.add_signal_handler(sig, graceful_shutdown,
+                                sig, task_to_cancel)  # type: ignore
+
+    try:
+        temporal_client = await TemporalClient.connect(config.temporal_address, namespace=config.temporal_namespace, plugins=[
+            OpenAIAgentsPlugin(
+                model_params=ModelActivityParameters(
+                    start_to_close_timeout=timedelta(seconds=30)
+                )
+            ),
+        ])
+        app.state.temporal_client = temporal_client
+        logger.info("Connected to Temporal server.", extra={
+            "address": config.temporal_address, "namespace": config.temporal_namespace})
+
+        mqtt_logger = config.get_logger("aiomqtt")
+        mqtt_client = aiomqtt.Client(hostname=config.mqtt_broker, port=config.mqtt_port, username=config.mqtt_user,
+                                     password=config.mqtt_password, identifier=config.hostname, protocol=aiomqtt.ProtocolVersion.V5, logger=mqtt_logger)
+        mqtt_client = await mqtt_client.__aenter__()
+        mqtt_logger.info("Connected to MQTT broker.", extra={
+            "broker": config.mqtt_broker, "port": config.mqtt_port, "username": config.mqtt_user, "client_id": config.hostname})
+        app.state.mqtt_client = mqtt_client
+
+        home_assistant_activity = HomeAssistantActivity(mqtt_client)
+
+        line_messaging_api = AsyncMessagingApi(AsyncApiClient(
+            Configuration(access_token=config.line_channel_access_token)))
+        reply_activity = ReplyActivity(line_messaging_api)
+
+        worker = TemporalWorker(
+            temporal_client,
+            task_queue=config.temporal_task_queue,
+            workflows=[HandleTextMessageWorkflow],
+            activities=[reply_activity.reply_text,
+                        reply_activity.reply_quick_reply,
+                        reply_activity.reply_audio,
+                        home_assistant_activity.remote_control_air_conditioner],
+        )
+        task_to_cancel.add(asyncio.create_task(worker.run()))
+        logger.info("Temporal worker started.", extra={
+                    "task_queue": config.temporal_task_queue})
+        await uvicorn.Server(uvicorn.Config(app, host="0.0.0.0", port=8000, log_config=None)).serve()
+    except asyncio.exceptions.CancelledError:
+        logger.info("uvicorn server cancelled, shutting down...")
+    finally:
+        await worker.shutdown()
+        logger.info(
+            "Application shutdown: Temporal worker shutdown gracefully.")
+        await mqtt_client.__aexit__(None, None, None)
+        logger.info("Application shutdown: MQTT client disconnected.")
+        await line_messaging_api.api_client.close()
+        logger.debug("Application shutdown: LINE API Client closed.")
+
 if __name__ == "__main__":
-    uvicorn.run(app, host="0.0.0.0", port=8000, log_config=None)
+    asyncio.run(main())

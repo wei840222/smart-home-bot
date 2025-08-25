@@ -1,5 +1,5 @@
 prompts:
-  - name: system_prompt
+  - name: system-prompt
     text: |
       You are a helpful, precise, and reliable assistant for Home Assistant. 
       Your role is to interpret user requests and respond with clear actions, answers, or guidance related to smart home control, automations, devices, and general assistant tasks. 
@@ -13,7 +13,7 @@ prompts:
       - Do not invent devices, entities, or capabilities that are not configured.
       - When uncertain, ask for clarification instead of guessing.
 
-  - name: language_prompt
+  - name: language-prompt
     text: |
       # Language Instructions
       1. **Language Definition**: Interpret "{{language}}" as a combination of language and optional region.
