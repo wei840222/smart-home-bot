@@ -132,7 +132,7 @@ jobs:
       - name: Update image tag
         working-directory: manifests
         run: |
-          cd kubernetes/apps-autosync/bot-farm
+          cd kubernetes/apps-autosync/bot-farm/smart-home-bot
           kustomize edit set image ghcr.io/wei840222/smart-home-bot:${{ github.ref_name }}
           git add .
           git commit -m "Update smart-home-bot image to ${{ github.ref_name }}"
