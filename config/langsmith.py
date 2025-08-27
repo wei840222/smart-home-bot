@@ -4,8 +4,6 @@ from typing import Optional
 from pydantic_settings import BaseSettings, SettingsConfigDict
 from langsmith import Client as LangSmith
 
-_langsmith_client: Optional[LangSmith] = None
-
 
 class LangSmithConfig(BaseSettings):
     model_config = SettingsConfigDict(
@@ -26,18 +24,26 @@ class LangSmithConfig(BaseSettings):
     def enabled(self) -> bool:
         return self.project is not None and self.api_key is not None
 
+
+class LangSmithMixin:
+    _langsmith_config: Optional[LangSmithConfig] = None
+    _langsmith_client: Optional[LangSmith] = None
+
     def get_langsmith_client(self) -> LangSmith:
-        if not self.enabled:
+        if self._langsmith_config is None:
+            self._langsmith_config = LangSmithConfig()
+        if not self._langsmith_config.enabled:
             raise RuntimeError("LangSmith is not enabled")
 
         os.environ["LANGSMITH_TRACING"] = "true"
-        os.environ["LANGSMITH_ENDPOINT"] = self.endpoint
-        os.environ["LANGSMITH_PROJECT"] = self.project  # type: ignore
-        os.environ["LANGSMITH_API_KEY"] = self.api_key  # type: ignore
+        os.environ["LANGSMITH_ENDPOINT"] = self._langsmith_config.endpoint
+        os.environ["LANGSMITH_PROJECT"] = self._langsmith_config.project or ""
+        os.environ["LANGSMITH_API_KEY"] = self._langsmith_config.api_key or ""
 
-        global _langsmith_client
-        if _langsmith_client is None:
-            _langsmith_client = LangSmith(
-                api_url=self.endpoint, api_key=self.api_key)
+        if self._langsmith_client is None:
+            self._langsmith_client = LangSmith(
+                api_url=self._langsmith_config.endpoint,
+                api_key=self._langsmith_config.api_key,
+            )
 
-        return _langsmith_client
+        return self._langsmith_client

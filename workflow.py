@@ -13,8 +13,10 @@ with workflow.unsafe.imports_passed_through():
     from langsmith.wrappers import OpenAIAgentsTracingProcessor
 
     from config import config
-    set_trace_processors([OpenAIAgentsTracingProcessor(
-        client=config._get_langsmith_config().get_langsmith_client())])
+
+    set_trace_processors(
+        [OpenAIAgentsTracingProcessor(client=config.get_langsmith_client())]
+    )
 
 
 @dataclass
@@ -34,10 +36,14 @@ class HandleTextMessageWorkflow:
             non_retryable_error_types=[ApiException.__name__],
         )
 
-        prompt_template = PromptTemplate.from_template("\n\n".join([
-            config.get_prompt("system-prompt").text,
-            config.get_prompt("language-prompt").text,
-        ]))
+        prompt_template = PromptTemplate.from_template(
+            "\n\n".join(
+                [
+                    config.get_prompt("system-prompt").text,
+                    config.get_prompt("language-prompt").text,
+                ]
+            )
+        )
 
         agent = Agent(
             name="Smart Home Assistant",
@@ -46,7 +52,7 @@ class HandleTextMessageWorkflow:
             tools=[
                 openai_agents.workflow.activity_as_tool(
                     HomeAssistantActivity.remote_control_air_conditioner,
-                    start_to_close_timeout=timedelta(seconds=5)
+                    start_to_close_timeout=timedelta(seconds=5),
                 )
             ],
         )

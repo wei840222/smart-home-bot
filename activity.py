@@ -17,7 +17,7 @@ import aiomqtt
 
 from config import config
 
-logger = config.get_logger("temporal.activity")
+logger = config.logger.get("temporal.activity")
 
 
 @dataclass
@@ -53,14 +53,17 @@ class ReplyActivity:
         response = await self.line_messaging_api.reply_message(
             ReplyMessageRequest(
                 reply_token=input.reply_token,
-                messages=[TextMessage(
-                    quote_token=input.quote_token,
-                    text=input.message,
-                )]
+                messages=[
+                    TextMessage(
+                        quote_token=input.quote_token,
+                        text=input.message,
+                    )
+                ],
             )
         )
-        logger.info("Reply text message sent successfully.",
-                    extra={"response": response})
+        logger.info(
+            "Reply text message sent successfully.", extra={"response": response}
+        )
         return response.to_dict()
 
     @activity.defn(name="ReplyQuickReplyActivity")
@@ -68,22 +71,25 @@ class ReplyActivity:
         response = await self.line_messaging_api.reply_message(
             ReplyMessageRequest(
                 reply_token=input.reply_token,
-                messages=[TextMessage(
-                    quote_token=input.quote_token,
-                    text=input.message,
-                    quick_reply=QuickReply(
-                        items=[
-                            QuickReplyItem(
-                                action=MessageAction(
-                                    label=text, text=text)
-                            ) for text in input.quick_messages
-                        ]
+                messages=[
+                    TextMessage(
+                        quote_token=input.quote_token,
+                        text=input.message,
+                        quick_reply=QuickReply(
+                            items=[
+                                QuickReplyItem(
+                                    action=MessageAction(label=text, text=text)
+                                )
+                                for text in input.quick_messages
+                            ]
+                        ),
                     )
-                )]
+                ],
             )
         )
-        logger.info("Reply audio message sent successfully.",
-                    extra={"response": response})
+        logger.info(
+            "Reply audio message sent successfully.", extra={"response": response}
+        )
         return response.to_dict()
 
     @activity.defn(name="ReplyAudioActivity")
@@ -91,21 +97,27 @@ class ReplyActivity:
         response = await self.line_messaging_api.reply_message(
             ReplyMessageRequest(
                 reply_token=input.reply_token,
-                messages=[AudioMessage(
-                    original_content_url=input.content_url, duration=input.duration)]
+                messages=[
+                    AudioMessage(
+                        original_content_url=input.content_url, duration=input.duration
+                    )
+                ],
             )
         )
-        logger.info("Reply audio message sent successfully.",
-                    extra={"response": response})
+        logger.info(
+            "Reply audio message sent successfully.", extra={"response": response}
+        )
         return response.to_dict()
 
 
 @dataclass
 class RemoteControlAirConditionerActivityParams:
     power_on: bool = Field(
-        default=True, description="Power on or off the air conditioner.")
-    temperature: int = Field(default=25, ge=16, le=32,
-                             description="Set temperature. In Celsius.")
+        default=True, description="Power on or off the air conditioner."
+    )
+    temperature: int = Field(
+        default=25, ge=16, le=32, description="Set temperature. In Celsius."
+    )
 
 
 class HomeAssistantActivity:
@@ -113,17 +125,20 @@ class HomeAssistantActivity:
         self.mqtt_client = mqtt_client
 
     @activity.defn(name="RemoteControlAirConditionerActivity")
-    async def remote_control_air_conditioner(self, input: RemoteControlAirConditionerActivityParams) -> dict:
+    async def remote_control_air_conditioner(
+        self, input: RemoteControlAirConditionerActivityParams
+    ) -> dict:
         """
         Remote control the air conditioner.
         Args:
             input (RemoteControlAirConditionerActivityParams): The parameters for controlling the air conditioner.
         """
 
-        payload = self._generate_mqtt_payload(
-            input.power_on, input.temperature)
+        payload = self._generate_mqtt_payload(input.power_on, input.temperature)
 
-        await self.mqtt_client.publish(topic="tasmota/cmnd/IRHVAC", payload=json.dumps(payload), qos=2)
+        await self.mqtt_client.publish(
+            topic="tasmota/cmnd/IRHVAC", payload=json.dumps(payload), qos=2
+        )
         return payload
 
     def _generate_mqtt_payload(self, power_on: bool, temperature: int) -> dict:
