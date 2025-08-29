@@ -1,9 +1,10 @@
 import signal
 import asyncio
-from typing import Annotated, List
+from typing import Annotated, List, Set
 
-import uvicorn
 from fastapi import FastAPI, Header, Request, HTTPException, status
+from granian.server.embed import Server
+from granian.constants import Interfaces
 from temporalio.common import WorkflowIDReusePolicy
 from temporalio.worker import Worker as TemporalWorker
 from linebot.v3.exceptions import InvalidSignatureError
@@ -69,50 +70,75 @@ async def handle_callback(
     return "ACCEPTED"
 
 
-def graceful_shutdown(sig: signal.Signals, task_to_cancel: set[asyncio.Task]) -> None:
-    logger.info("received exit signal", extra={"signal": sig.name})
-    for task in task_to_cancel:
-        logger.info("cancelling task", extra={"task": task})
-        task.cancel()
+async def start_server() -> None:
+    shutdown_event = asyncio.Event()
 
+    def _signal_handler(sig: signal.Signals) -> None:
+        if shutdown_event.is_set():
+            return
+        logger.info("received exit signal", extra={"signal": sig.name})
+        shutdown_event.set()
 
-async def main() -> None:
+    loop = asyncio.get_running_loop()
+    task_to_cancel: Set[asyncio.Task] = set()
+
+    for sig in (signal.SIGHUP, signal.SIGTERM, signal.SIGINT):
+        loop.add_signal_handler(sig, _signal_handler, sig)
+
+    async with (
+        config.temporal.connect() as temporal_client,
+        config.mqtt.connect() as mqtt_client,
+        config.line.connect() as line_messaging_api_client,
+    ):
+        home_assistant_activity = HomeAssistantActivity(mqtt_client)
+        reply_activity = ReplyActivity(line_messaging_api_client)
+
+        worker = TemporalWorker(
+            temporal_client,
+            task_queue=config.temporal.task_queue,
+            workflows=[HandleTextMessageWorkflow],
+            activities=[
+                reply_activity.reply_text,
+                reply_activity.reply_quick_reply,
+                reply_activity.reply_audio,
+                home_assistant_activity.remote_control_air_conditioner,
+            ],
+        )
+        task_to_cancel.add(asyncio.create_task(worker.run()))
+        logger.info(
+            "Temporal worker started.",
+            extra={"task_queue": config.temporal.task_queue},
+        )
+
+        server = Server(
+            app,
+            address="0.0.0.0",
+            port=8000,
+            interface=Interfaces.ASGI,
+        )
+        config.logger.configure_granian_loggers()
+        config.logger.configure_fastapi_loggers(app)
+        task_to_cancel.add(asyncio.create_task(server.serve()))
+        logger.info(
+            "Granian server started.", extra={"address": "0.0.0.0", "port": 8000}
+        )
+
+        await shutdown_event.wait()
+
     try:
-        async with (
-            config.temporal.connect() as temporal_client,
-            config.mqtt.connect() as mqtt_client,
-            config.line.connect() as line_messaging_api_client,
-        ):
-            home_assistant_activity = HomeAssistantActivity(mqtt_client)
-            reply_activity = ReplyActivity(line_messaging_api_client)
-
-            worker = TemporalWorker(
-                temporal_client,
-                task_queue=config.temporal.task_queue,
-                workflows=[HandleTextMessageWorkflow],
-                activities=[
-                    reply_activity.reply_text,
-                    reply_activity.reply_quick_reply,
-                    reply_activity.reply_audio,
-                    home_assistant_activity.remote_control_air_conditioner,
-                ],
-            )
-            asyncio.create_task(worker.run())
-            logger.info(
-                "Temporal worker started.",
-                extra={"task_queue": config.temporal.task_queue},
-            )
-            await uvicorn.Server(
-                uvicorn.Config(app, host="0.0.0.0", port=8000, log_config=None)
-            ).serve()
-    except asyncio.exceptions.CancelledError:
-        logger.info("Uvicorn server cancelled, shutting down...")
-    finally:
-        await worker.shutdown()
+        await asyncio.wait_for(server.shutdown(), timeout=30)
+        logger.info("Granian server shutdown successfully.")
+        await asyncio.wait_for(worker.shutdown(), timeout=30)
         logger.info("Temporal worker shutdown successfully.")
+    except asyncio.TimeoutError:
+        logger.warning("Timeout during shutdown, cancelling tasks...")
+    finally:
+        for task in task_to_cancel:
+            cancelled = task.cancel()
+            if not cancelled:
+                await task
+            logger.info("Cancelled task", extra={"task": task, "cancelled": cancelled})
 
 
 if __name__ == "__main__":
-    config.logger.configure_uvicorn_loggers()
-    config.logger.configure_fastapi_loggers(app)
-    asyncio.run(main())
+    asyncio.run(start_server())

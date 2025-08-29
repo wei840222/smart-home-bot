@@ -93,20 +93,12 @@ class LoggerConfig(BaseSettings):
             ],
         )
 
-    def configure_uvicorn_loggers(self):
-        for _log in ["uvicorn", "uvicorn.error"]:
-            # Clear the log handlers for uvicorn loggers, and enable propagation
-            # so the messages are caught by our root logger and formatted correctly
-            # by structlog
-            logging.getLogger(_log).handlers.clear()
-            logging.getLogger(_log).propagate = True
-
-        # Since we re-create the access logs ourselves, to add all information
-        # in the structured log (see the `logging_middleware` in main.py), we clear
-        # the handlers and prevent the logs to propagate to a logger higher up in the
-        # hierarchy (effectively rendering them silent).
-        logging.getLogger("uvicorn.access").handlers.clear()
-        logging.getLogger("uvicorn.access").propagate = False
+    def configure_granian_loggers(self):
+        # Clear the log handlers for uvicorn loggers, and enable propagation
+        # so the messages are caught by our root logger and formatted correctly
+        # by structlog
+        logging.getLogger("_granian").handlers.clear()
+        logging.getLogger("_granian").propagate = True
 
     def configure_fastapi_loggers(self, app: FastAPI):
         error_logger = self.get("fastapi.error")
