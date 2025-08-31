@@ -27,23 +27,27 @@ class LangSmithConfig(BaseSettings):
 
 class LangSmithMixin:
     _langsmith_config: Optional[LangSmithConfig] = None
+
+    @property
+    def langsmith(self) -> LangSmithConfig:
+        if self._langsmith_config is None:
+            self._langsmith_config = LangSmithConfig()
+            os.environ["LANGSMITH_TRACING"] = "true"
+            os.environ["LANGSMITH_ENDPOINT"] = self.langsmith.endpoint
+            os.environ["LANGSMITH_PROJECT"] = self.langsmith.project or ""
+            os.environ["LANGSMITH_API_KEY"] = self.langsmith.api_key or ""
+        return self._langsmith_config
+
     _langsmith_client: Optional[LangSmith] = None
 
     def get_langsmith_client(self) -> LangSmith:
-        if self._langsmith_config is None:
-            self._langsmith_config = LangSmithConfig()
-        if not self._langsmith_config.enabled:
+        if not self.langsmith.enabled:
             raise RuntimeError("LangSmith is not enabled")
-
-        os.environ["LANGSMITH_TRACING"] = "true"
-        os.environ["LANGSMITH_ENDPOINT"] = self._langsmith_config.endpoint
-        os.environ["LANGSMITH_PROJECT"] = self._langsmith_config.project or ""
-        os.environ["LANGSMITH_API_KEY"] = self._langsmith_config.api_key or ""
 
         if self._langsmith_client is None:
             self._langsmith_client = LangSmith(
-                api_url=self._langsmith_config.endpoint,
-                api_key=self._langsmith_config.api_key,
+                api_url=self.langsmith.endpoint,
+                api_key=self.langsmith.api_key,
             )
 
         return self._langsmith_client

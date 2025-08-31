@@ -60,10 +60,8 @@ class PromptMixin(LangSmithMixin):
                 )
             case PromptProvider.LANGSMITH:
                 client = self.get_langsmith_client()
-                if self._langsmith_config is None:
-                    raise ValueError("LangSmith config is not initialized.")
                 langsmith_prompt: PromptTemplate = client.pull_prompt(
-                    f"{self._langsmith_config.project}-{name}:{self._langsmith_config.environment}"
+                    f"{self.langsmith.project}-{name}:{self.langsmith.environment}"
                 )
                 return Prompt(
                     name=name,
