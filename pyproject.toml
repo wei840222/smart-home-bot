@@ -9,6 +9,7 @@ dependencies = [
     "asgi-correlation-id>=4.3.4",
     "fastapi>=0.116.1",
     "granian>=2.5.1",
+    "homeassistant-api>=4.2.2.post1",
     "langchain-core>=0.3.74",
     "langsmith[openai-agents]>=0.4.16",
     "line-bot-sdk>=3.18.1",

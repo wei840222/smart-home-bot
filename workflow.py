@@ -26,7 +26,7 @@ with workflow.unsafe.imports_passed_through():
 
     from config import config
 
-    logger = config.logger.get("temporal.workflow")
+    logger = config.logger.get(__name__)
 
     if config.langsmith.enabled:
         logger.info("LangSmith integration is enabled.")
@@ -49,7 +49,7 @@ class HandleTextMessageWorkflow:
         ctx: RunContextWrapper[TContext],
         _: Agent[Any],
         input_data: str | List[TResponseInputItem],
-    ):
+    ) -> GuardrailFunctionOutput:
         @dataclass
         class InputGuardrailOutput:
             is_related: bool = Field(
@@ -98,9 +98,17 @@ class HandleTextMessageWorkflow:
             instructions=prompt_template.format(language="繁體中文（台灣）"),
             tools=[
                 openai_agents.workflow.activity_as_tool(
+                    HomeAssistantActivity.check_1f_inner_door_status,
+                    start_to_close_timeout=timedelta(seconds=5),
+                ),
+                openai_agents.workflow.activity_as_tool(
+                    HomeAssistantActivity.check_2f_bedroom_presence_status,
+                    start_to_close_timeout=timedelta(seconds=5),
+                ),
+                openai_agents.workflow.activity_as_tool(
                     HomeAssistantActivity.remote_control_air_conditioner,
                     start_to_close_timeout=timedelta(seconds=5),
-                )
+                ),
             ],
             input_guardrails=[
                 InputGuardrail(guardrail_function=self._input_guardrail),

@@ -4,8 +4,9 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 from .logger import LoggerMixin
 from .prompt import PromptMixin
 from .temporal import TemporalMixin
-from .line import LINEMessagingAPIConfigMixin
 from .mqtt import MQTTMixin
+from .homeassistant import HomeAssistantMixin
+from .line import LINEMessagingAPIConfigMixin
 
 
 class Config(
@@ -14,6 +15,7 @@ class Config(
     PromptMixin,
     TemporalMixin,
     MQTTMixin,
+    HomeAssistantMixin,
     LINEMessagingAPIConfigMixin,
 ):
     model_config = SettingsConfigDict(

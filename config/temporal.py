@@ -8,6 +8,8 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 from temporalio.client import Client as TemporalClient
 from temporalio.contrib.openai_agents import OpenAIAgentsPlugin, ModelActivityParameters
 
+logger = logging.getLogger(__name__)
+
 
 class TemporalConfig(BaseSettings):
     model_config = SettingsConfigDict(
@@ -47,7 +49,7 @@ class TemporalConfig(BaseSettings):
                     )
                 ],
             )
-            logging.getLogger("temporal").info(
+            logger.info(
                 "Connected to Temporal server.",
                 extra={"address": self.address, "namespace": self.namespace},
             )

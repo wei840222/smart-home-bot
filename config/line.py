@@ -7,6 +7,8 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 from linebot.v3.messaging import AsyncApiClient, AsyncMessagingApi, Configuration
 from linebot.v3.webhook import WebhookParser
 
+logger = logging.getLogger(__name__)
+
 
 class LINEMessagingAPIConfig(BaseSettings):
     model_config = SettingsConfigDict(
@@ -24,7 +26,6 @@ class LINEMessagingAPIConfig(BaseSettings):
 
     @asynccontextmanager
     async def connect(self) -> AsyncGenerator[AsyncMessagingApi, None]:
-        logger = logging.getLogger("line.messaging.api")
         async with AsyncApiClient(
             Configuration(access_token=self.channel_access_token)
         ) as client:
@@ -36,7 +37,6 @@ class LINEMessagingAPIConfig(BaseSettings):
 
     @contextmanager
     def webhook_parser(self) -> Generator[WebhookParser, None]:
-        logger = logging.getLogger("line.messaging.api")
         if self._webhook_parser is None:
             self._webhook_parser = WebhookParser(self.channel_secret)
             logger.info("Created LINE Webhook Parser.")

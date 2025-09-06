@@ -28,8 +28,6 @@ def health():
 async def handle_callback(
     request: Request, x_line_signature: Annotated[str, Header()]
 ) -> str:
-    logger = config.logger.get("handler.callback.line")
-
     body = await request.body()
 
     try:
@@ -42,7 +40,7 @@ async def handle_callback(
 
     async with config.temporal.connect() as temporal_client:
         for event in events:
-            logger.debug("Received webhook event.", extra={"event": event})
+            logger.info("Received webhook event.", extra={"event": event})
             if not isinstance(event, MessageEvent):
                 continue
             if not isinstance(event.message, TextMessageContent):
@@ -88,9 +86,12 @@ async def start_server() -> None:
     async with (
         config.temporal.connect() as temporal_client,
         config.mqtt.connect() as mqtt_client,
+        config.home_assistant.connect() as home_assistant_client,
         config.line.connect() as line_messaging_api_client,
     ):
-        home_assistant_activity = HomeAssistantActivity(mqtt_client)
+        home_assistant_activity = HomeAssistantActivity(
+            mqtt_client, home_assistant_client
+        )
         reply_activity = ReplyActivity(line_messaging_api_client)
 
         worker = TemporalWorker(
@@ -101,6 +102,8 @@ async def start_server() -> None:
                 reply_activity.reply_text,
                 reply_activity.reply_quick_reply,
                 reply_activity.reply_audio,
+                home_assistant_activity.check_1f_inner_door_status,
+                home_assistant_activity.check_2f_bedroom_presence_status,
                 home_assistant_activity.remote_control_air_conditioner,
             ],
         )

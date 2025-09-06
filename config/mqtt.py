@@ -7,6 +7,8 @@ from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 import aiomqtt
 
+logger = logging.getLogger(__name__)
+
 
 class MQTTConfig(BaseSettings):
     model_config = SettingsConfigDict(
@@ -34,8 +36,7 @@ class MQTTConfig(BaseSettings):
 
     @asynccontextmanager
     async def connect(self) -> AsyncGenerator[aiomqtt.Client, None]:
-        logger = logging.getLogger("aiomqtt")
-        client = aiomqtt.Client(
+        async with aiomqtt.Client(
             hostname=self.broker,
             port=self.port,
             username=self.user,
@@ -43,22 +44,18 @@ class MQTTConfig(BaseSettings):
             identifier=self.identifier,
             protocol=aiomqtt.ProtocolVersion.V5,
             logger=logger,
-        )
-        client = await client.__aenter__()
-        logger.info(
-            "Connected to MQTT broker.",
-            extra={
-                "broker": self.broker,
-                "port": self.port,
-                "username": self.user,
-                "client_id": self.identifier,
-            },
-        )
-        try:
+        ) as client:
+            logger.info(
+                "Connected to MQTT broker.",
+                extra={
+                    "broker": self.broker,
+                    "port": self.port,
+                    "username": self.user,
+                    "client_id": self.identifier,
+                },
+            )
             yield client
-        finally:
-            await client.__aexit__(None, None, None)
-            logger.info("Disconnected from MQTT broker.")
+        logger.info("Disconnected from MQTT broker.")
 
 
 class MQTTMixin:
