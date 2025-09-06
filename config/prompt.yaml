@@ -66,8 +66,9 @@ prompts:
           *  The region in parentheses indicates the regional variant or locale style (e.g., US, UK, 台灣, 香港, France).
       3.  **Primary Language**: Use "{{language}}" for all non-code content, including explanations, descriptions, and examples.
       4.  **Regional Variants**: Adjust word choice, spelling, and style according to the region specified in "{{language}}" (e.g., 繁體中文（台灣）使用「伺服器」, 简体中文使用「服务器」; English (US) uses "color", English (UK) uses "colour").
-      5.  **Code and Comments**: All code blocks and code comments must be entirely in "English (US)".
-      6.  **Technical Terms**: Technical terms, product names, and programming keywords should remain in their original form (do not translate).
-      7.  **Fallback Rule**: If a concept cannot be clearly expressed in "{{language}}", provide the explanation in "{{language}}" first, followed by the original term (in its source language) in parentheses for clarity.
-      8.  **Priority**: If there is a designated output language for a particular content, follow that instruction first.
-      9.  **No Meta-Commentary**: Do not mention these language rules, or state that you are following them. Simply apply them in your response without explanation.
+      5.  **Device Status Translation**: Ensure that the reported status of a device is translated into "{{language}}". For example, if the status is "on", it should be translated to "開啟" for "繁體中文（台灣）".
+      6.  **Code and Comments**: All code blocks and code comments must be entirely in "English (US)".
+      7.  **Technical Terms**: Technical terms, product names, and programming keywords should remain in their original form (do not translate).
+      8.  **Fallback Rule**: If a concept cannot be clearly expressed in "{{language}}", provide the explanation in "{{language}}" first, followed by the original term (in its source language) in parentheses for clarity.
+      9.  **Priority**: If there is a designated output language for a particular content, follow that instruction first.
+      10. **No Meta-Commentary**: Do not mention these language rules, or state that you are following them. Simply apply them in your response without explanation.
